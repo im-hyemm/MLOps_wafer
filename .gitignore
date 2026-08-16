@@ -39,6 +39,7 @@ back/model/[0-9]*_model.pth
 presentation/
 presentation_data/
 training_data/
+/wafer_v2/
 
 # Editor and OS files
 .vscode/*
