@@ -1,63 +1,85 @@
-# WaferGuard 프로젝트 README (배포·이관용)
+# WaferGuard
 
-본 문서는 다른 환경(상대방 PC)에서 **프로젝트가 문제없이 실행**되도록 하기 위한 단계별 안내서입니다. 운영체제는 Windows 10/11 및 macOS/Linux를 가정합니다. 경로 표기는 예시이므로 각 환경에 맞게 수정하십시오.
+> CNN 기반 웨이퍼 결함 분류와 논문 기반 원인 분석을 결합한 MLOps 서비스
 
----
+WaferGuard는 반도체 웨이퍼 맵을 분석해 결함 패턴을 분류하고, Lot별 공정 이력과 결함 통계를 제공합니다. 재학습한 모델과 기존 모델의 성능을 비교해 더 나은 모델을 반영하며, 결함률이 높은 Lot에는 관련 논문을 검색해 LLM 기반 원인 설명과 점검 항목을 제공합니다.
 
-## 1) 프로젝트 개요
+## 주요 기능
 
-- **back/**: FastAPI 기반 백엔드 (DB 연동, 모델 추론/학습 API)
-- **front/**: Vue 3 + Vite 기반 프론트엔드 (대시보드/업로드 UI)
-- **presentation_data/**: 발표(데모)에 사용한 정적 데이터
-- **training_data/**: CNN 학습용 이미지·라벨 데이터
+- 단일 웨이퍼 이미지의 결함 유형 및 신뢰도 예측
+- 단일 Lot 및 다중 Lot 단위의 결함률·유형별 통계 분석
+- PostgreSQL에 저장된 Lot별 공정 장비 및 레시피 이력 조회
+- 라벨 데이터 업로드를 통한 기존 모델 성능 평가
+- 모델 재학습 후 Macro F1 기준 기존 모델과 자동 비교·교체
+- FAISS 문헌 검색과 OpenAI API를 활용한 결함 원인 및 점검 항목 설명
 
-> 참고: 실제 구동에 필요한 코드는 `back/`, `front/`에 있으며, `presentation_data/`와 `training_data/`는 시연/학습 목적의 데이터 폴더입니다.
+분류 대상은 `Center`, `Donut`, `Edge-Loc`, `Edge-Ring`, `Loc`, `Random`, `Scratch`, `Near-full`, `none`의 9개 클래스입니다.
 
----
+## 시스템 아키텍처
 
-## 2) 사전 요구사항 (Prerequisites)
-
-- **Python** 3.10+ (권장: 3.11)
-- **PostgreSQL** 13+ (로컬 실행 가정)
-- **Node.js** 18+ 및 **npm** (프런트엔드용)
-- (Windows 권장) PowerShell, (macOS/Linux) Bash/Zsh
-
----
-
-## 3) 백엔드 설정 (back/)
-
-### 3.1. 환경 변수(.env) 작성
-
-`back/` 디렉터리 **최상단**에 `.env` 파일을 생성하고 아래 형식을 본인 환경에 맞게 채우십시오.
-
-```ini
-# 파일 위치: back/.env
-# 경로는 본인 환경에 맞게 수정하세요
-BASE_DIR=C:/Users/<user>/back/
-
-# OpenAI API 키 (예: sk-...) — 실제 키로 교체
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-
-# PostgreSQL 연결 정보
-DB_NAME=YOUR_DB_NAME
-DB_USER=postgres
-DB_PASSWORD=YOUR_DB_PASSWORD
-DB_HOST=YOUR_DB_HOST
-DB_PORT=YOUR_DB_PORT
-
-# 연결 풀 설정 (필요시 조정)
-DB_POOL_MIN=1
-DB_POOL_MAX=5
-DB_CONNECT_TIMEOUT=5
+```mermaid
+flowchart LR
+    U["사용자"] --> F["Vue 3 대시보드"]
+    F --> A["FastAPI"]
+    A --> M["PyTorch CNN<br/>학습 및 추론"]
+    A --> D["PostgreSQL<br/>Lot 공정 이력"]
+    A --> R["LangChain + FAISS<br/>문헌 검색"]
+    R --> L["OpenAI API<br/>결함 원인 설명"]
 ```
 
-> **보안 주의**: 공유 또는 공개 저장소에 `.env`를 업로드하지 마십시오.
+## 기술 스택
 
-### 3.2. 가상환경 생성 및 의존성 설치
+| 영역 | 기술 |
+| --- | --- |
+| Frontend | Vue 3, Vite, Axios, Chart.js, Bootstrap |
+| Backend | FastAPI, Pydantic, Uvicorn |
+| ML | PyTorch, torchvision, scikit-learn, OpenCV |
+| Database | PostgreSQL, psycopg2 |
+| LLM/RAG | OpenAI API, LangChain, FAISS, PyMuPDF |
 
-아래 명령은 모두 `back/` 디렉터리에서 실행합니다.
+## 프로젝트 구조
 
-**Windows (PowerShell)**
+```text
+MLOps_wafer/
+├── back/
+│   ├── api/
+│   │   └── routes/          # 예측, 재학습, LLM 설명 API
+│   ├── config/              # 환경, 경로 및 DB 설정
+│   ├── core/
+│   │   ├── data/            # PyTorch 데이터셋
+│   │   ├── evaluation/      # 평가지표 및 시각화
+│   │   └── model/           # CNN 구조, 학습 및 추론
+│   ├── model/               # 서비스에서 사용하는 모델 가중치
+│   ├── paper/               # RAG 검색 대상 논문
+│   ├── scripts/             # 문헌 인덱스 생성 스크립트
+│   ├── services/            # PostgreSQL 및 LLM 서비스
+│   ├── tests/               # 백엔드 테스트
+│   ├── utils/               # 파일 및 이미지 공통 기능
+│   ├── .env.example         # 환경변수 예시
+│   ├── create_db.py         # 개발용 DB 초기화
+│   └── main.py              # FastAPI 진입점
+├── front/
+│   ├── src/
+│   │   ├── components/      # 공통 UI 컴포넌트
+│   │   ├── pages/           # 분석 화면
+│   │   └── router/          # Vue Router 설정
+│   └── package.json
+└── README.md
+```
+
+## 실행 환경
+
+- Python 3.10 이상, 3.11 권장
+- PostgreSQL 13 이상
+- Node.js 18 이상 및 npm
+
+## 로컬 실행 방법
+
+### 1. 백엔드 환경 구성
+
+프로젝트 루트에서 `back` 디렉터리로 이동한 후 가상환경을 구성합니다.
+
+Windows PowerShell:
 
 ```powershell
 cd back
@@ -65,9 +87,10 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-**macOS/Linux**
+macOS/Linux:
 
 ```bash
 cd back
@@ -75,294 +98,117 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+cp .env.example .env
 ```
 
-### 3.3. 데이터베이스 초기화
+복사한 `.env`에서 OpenAI API 키와 PostgreSQL 접속 정보를 실제 환경에 맞게 수정합니다.
 
-PostgreSQL 서버가 실행 중인지 확인한 뒤, 아래 스크립트를 실행하여 DB 및 스키마를 준비합니다.
+### 2. 데이터베이스 초기화
+
+PostgreSQL 서버를 실행한 다음 아래 명령을 사용합니다.
 
 ```bash
-# 위치: back/
 python create_db.py
 ```
 
-> 기본 연결 정보는 `.env`를 따릅니다. 필요 시 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`를 조정하십시오.
+> 주의: `create_db.py`는 `.env`의 `DB_NAME`과 같은 데이터베이스가 존재하면 삭제하고 다시 생성합니다. 보존해야 하는 데이터베이스 이름을 사용하지 마세요.
 
-### 3.4. 백엔드 실행
+### 3. 문헌 인덱스 생성
 
-개발 서버(예: Uvicorn) 실행 예시는 다음과 같습니다.
-
-```bash
-# 위치: back/
-uvicorn main:app --reload --host 0.0.0.0 --port 8001
-```
-
-서버가 정상 기동되면 `http://localhost:8001/docs` (Swagger UI)에서 API를 확인할 수 있습니다.
-
----
-
-## 4) 프런트엔드 설정 (front/)
-
-### 4.1. 의존성 설치
-
-아래 명령은 모두 `front/` 디렉터리에서 실행합니다.
+LLM 설명 기능을 사용하려면 OpenAI API 키를 설정한 후 문헌 인덱스를 생성합니다.
 
 ```bash
-cd front
-npm install chart.js chartjs-plugin-datalabels axios vue-router bootstrap-vue-next bootstrap
+python -m scripts.build_paper_index
 ```
 
-> Vue 3 및 Vite는 프로젝트에 이미 설정되어 있다고 가정합니다. 필요 시 `npm install` 만으로 루트의 `package.json`에 정의된 기본 의존성도 함께 설치하십시오.
+새 문헌이 추가되면 서비스가 인덱스를 주기적으로 갱신합니다.
 
-### 4.2. 프런트엔드 실행
+### 4. 백엔드 실행
+
+`back` 디렉터리에서 다음 명령을 실행합니다.
 
 ```bash
-# 위치: front/
-npm run dev
+python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-기본적으로 Vite 개발 서버는 `http://localhost:5173`에서 실행됩니다. 프록시 설정 여부에 따라 백엔드(`http://localhost:8001`)와 통신합니다.
+서버가 실행되면 [Swagger UI](http://localhost:8001/docs)에서 API를 확인할 수 있습니다.
 
----
+### 5. 프런트엔드 실행
 
-## 5) 학습/발표 라우터 전환 안내
-
-현재 기본 라우터는 **`training.py`**로 설정되어 있으며, 그대로 실행하면 최대 **에폭 100회** 학습이 동작합니다. **발표(데모)와 동일한 동작**을 원하시면 `main.py`에서 라우터 임포트를 **`training_presentation.py`**로 변경하십시오.
-
-### 5.1. 기본
-
-```python
-# 파일: back/main.py
-from api.routes.training import router as training_router
-app.include_router(training_router, prefix="/training")
-```
-
-### 5.2. 발표 모드
-
-```python
-# 파일: back/main.py
-from api.routes.training_presentation import router as training_router
-app.include_router(training_router, prefix="/training")
-```
-
----
-
-## 6) 실행 순서 요약 (Cheat Sheet)
-
-1. **PostgreSQL 설치 및 실행**
-2. `back/`로 이동 → **`.env` 작성**
-3. `back/`에서 **가상환경 생성** 및 `pip install -r requirements.txt`
-4. `back/create_db.py` 실행 (스키마/초기화)
-5. 필요 시 `main.py` 라우터를 `training_presentation`으로 전환 (발표 모드)
-6. `python -m uvicorn main:app --port 8001 --reload` 로 백엔드 실행
-7. `front/`로 이동 → `npm install ...` 설치 → `npm run dev` 실행
-
----
-
-## 7) 폴더 구조
-
-```
-project-root/
-├─ back/                # FastAPI backend and ML pipeline core
-│  ├─ api/              # HTTP endpoints and route handlers
-│  │  └─ routes/        # Training & presentation APIs
-│  ├─ config/           # Shared config (DB paths, settings)
-│  ├─ data/             # Dataset loading utilities
-│  ├─ evaluation/       # Metrics & visualization helpers
-│  ├─ model/            # Model architecture, trainer, predictor
-│  ├─ scripts/          # Support scripts (e.g., paper index builder)
-│  └─ services/         # Reusable services (DB access, LLM client)
-├─ front/               # Vite/Vue frontend application
-│  ├─ src/              # Vue components, pages, router, assets
-│  └─ package.json      # Frontend dependencies & scripts
-├─ presentation_data/   # Demo assets for presentations
-└─ training_data/       # Core training datasets
-
-```
-
-# WaferGuard 프로젝트 README (배포·이관용)
-
-> 작성자: SKALA 2기 4반 전혜민, 김정윤, 김유진
-
-본 문서는 다른 환경(상대방 PC)에서 **프로젝트가 문제없이 실행**되도록 하기 위한 단계별 안내서입니다. 운영체제는 Windows 10/11 및 macOS/Linux를 가정합니다. 경로 표기는 예시이므로 각 환경에 맞게 수정하십시오.
-
----
-
-## 1) 프로젝트 개요
-
-- **back/**: FastAPI 기반 백엔드 (DB 연동, 모델 추론/학습 API)
-- **front/**: Vue 3 + Vite 기반 프론트엔드 (대시보드/업로드 UI)
-- **presentation_data/**: 발표(데모)에 사용한 정적 데이터
-- **training_data/**: CNN 학습용 이미지·라벨 데이터
-
-> 참고: 실제 구동에 필요한 코드는 `back/`, `front/`에 있으며, `presentation_data/`와 `training_data/`는 시연/학습 목적의 데이터 폴더입니다.
-
----
-
-## 2) 사전 요구사항 (Prerequisites)
-
-- **Python** 3.10+ (권장: 3.11)
-- **PostgreSQL** 13+ (로컬 실행 가정)
-- **Node.js** 18+ 및 **npm** (프런트엔드용)
-- (Windows 권장) PowerShell, (macOS/Linux) Bash/Zsh
-
----
-
-## 3) 백엔드 설정 (back/)
-
-### 3.1. 환경 변수(.env) 작성
-
-`back/` 디렉터리 **최상단**에 `.env` 파일을 생성하고 아래 형식을 본인 환경에 맞게 채우십시오.
-
-```ini
-# 파일 위치: back/.env
-# 경로는 본인 환경에 맞게 수정하세요
-BASE_DIR=C:/Users/<user>/back/
-
-# OpenAI API 키 (예: sk-...) — 실제 키로 교체
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-
-# PostgreSQL 연결 정보
-DB_NAME=YOUR_DB_NAME
-DB_USER=postgres
-DB_PASSWORD=YOUR_DB_PASSWORD
-DB_HOST=YOUR_DB_HOST
-DB_PORT=YOUR_DB_PORT
-
-# 연결 풀 설정 (필요시 조정)
-DB_POOL_MIN=1
-DB_POOL_MAX=5
-DB_CONNECT_TIMEOUT=5
-```
-
-> **보안 주의**: 공유 또는 공개 저장소에 `.env`를 업로드하지 마십시오.
-
-### 3.2. 가상환경 생성 및 의존성 설치
-
-아래 명령은 모두 `back/` 디렉터리에서 실행합니다.
-
-**Windows (PowerShell)**
-
-```powershell
-cd back
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-**macOS/Linux**
-
-```bash
-cd back
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 3.3. 데이터베이스 초기화
-
-PostgreSQL 서버가 실행 중인지 확인한 뒤, 아래 스크립트를 실행하여 DB 및 스키마를 준비합니다.
-
-```bash
-# 위치: back/
-python create_db.py
-```
-
-> 기본 연결 정보는 `.env`를 따릅니다. 필요 시 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`를 조정하십시오.
-
-### 3.4. 백엔드 실행
-
-개발 서버(예: Uvicorn) 실행 예시는 다음과 같습니다.
-
-```bash
-# 위치: back/
-uvicorn main:app --reload --host 0.0.0.0 --port 8001
-```
-
-서버가 정상 기동되면 `http://localhost:8001/docs` (Swagger UI)에서 API를 확인할 수 있습니다.
-
----
-
-## 4) 프런트엔드 설정 (front/)
-
-### 4.1. 의존성 설치
-
-아래 명령은 모두 `front/` 디렉터리에서 실행합니다.
+새 터미널에서 프로젝트의 `front` 디렉터리로 이동합니다.
 
 ```bash
 cd front
-npm install chart.js chartjs-plugin-datalabels axios vue-router bootstrap-vue-next bootstrap
-```
-
-> Vue 3 및 Vite는 프로젝트에 이미 설정되어 있다고 가정합니다. 필요 시 `npm install` 만으로 루트의 `package.json`에 정의된 기본 의존성도 함께 설치하십시오.
-
-### 4.2. 프런트엔드 실행
-
-```bash
-# 위치: front/
+npm install
 npm run dev
 ```
 
-기본적으로 Vite 개발 서버는 `http://localhost:5173`에서 실행됩니다. 프록시 설정 여부에 따라 백엔드(`http://localhost:8001`)와 통신합니다.
+브라우저에서 `http://localhost:5173`으로 접속합니다.
 
----
+## 환경변수
 
-## 5) 학습/발표 라우터 전환 안내
+| 변수 | 필수 여부 | 설명 | 기본값 |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | LLM 기능 사용 시 | 임베딩 및 결함 설명에 사용하는 OpenAI API 키 | 없음 |
+| `DB_NAME` | 필수 | PostgreSQL 데이터베이스 이름 | 없음 |
+| `DB_USER` | 필수 | PostgreSQL 사용자 | 없음 |
+| `DB_PASSWORD` | 필수 | PostgreSQL 비밀번호 | 없음 |
+| `DB_HOST` | 필수 | PostgreSQL 호스트 | 없음 |
+| `DB_PORT` | 필수 | PostgreSQL 포트 | 없음 |
+| `DB_POOL_MIN` | 선택 | 최소 DB 연결 수 | `1` |
+| `DB_POOL_MAX` | 선택 | 최대 DB 연결 수 | `5` |
+| `DB_CONNECT_TIMEOUT` | 선택 | DB 연결 제한 시간(초) | `5` |
+| `BASE_DIR` | 선택 | 백엔드 리소스의 기준 경로 | 현재 `back` 경로 |
 
-현재 기본 라우터는 **`training.py`**로 설정되어 있으며, 그대로 실행하면 최대 **에폭 100회** 학습이 동작합니다. **발표(데모)와 동일한 동작**을 원하시면 `main.py`에서 라우터 임포트를 **`training_presentation.py`**로 변경하십시오.
+## 재학습 데이터 형식
 
-### 5.1. 기본
+모델 평가 및 재학습 API는 pandas DataFrame을 저장한 pickle 파일을 입력으로 사용합니다.
 
-```python
-# 파일: back/main.py
-from api.routes.training import router as training_router
-app.include_router(training_router, prefix="/training")
-```
+| 컬럼 | 설명 |
+| --- | --- |
+| `waferMap` | 2차원 웨이퍼 맵 배열 |
+| `failureType` | 9개 분류 클래스 중 하나인 정답 라벨 |
+| `lotName` | 웨이퍼가 속한 Lot 식별자 |
 
-### 5.2. 발표 모드
+## 주요 API
 
-```python
-# 파일: back/main.py
-from api.routes.training_presentation import router as training_router
-app.include_router(training_router, prefix="/training")
-```
+| Method | Endpoint | 설명 |
+| --- | --- | --- |
+| `POST` | `/predict_img` | 단일 웨이퍼 이미지 예측 |
+| `POST` | `/predict_multi_images_one_lot` | 단일 Lot의 다중 이미지 예측 |
+| `POST` | `/predict_multi_images_multi_lots` | 여러 Lot의 다중 이미지 예측 |
+| `POST` | `/upload_predict_labeled_images` | 라벨 데이터 업로드 및 기존 모델 평가 |
+| `POST` | `/retrain_predict_labeled_images` | 모델 재학습, 성능 비교 및 모델 교체 |
+| `POST` | `/explanation/get_llm_response` | 결함률과 결함 분포를 기반으로 원인 설명 생성 |
 
----
+## 팀원별 역할
 
-## 6) 실행 순서 요약 (Cheat Sheet)
+### 전혜민
 
-1. **PostgreSQL 설치 및 실행**
-2. `back/`로 이동 → **`.env` 작성**
-3. `back/`에서 **가상환경 생성** 및 `pip install -r requirements.txt`
-4. `back/create_db.py` 실행 (스키마/초기화)
-5. 필요 시 `main.py` 라우터를 `training_presentation`으로 전환 (발표 모드)
-6. `python -m uvicorn main:app --port 8001 --reload` 로 백엔드 실행
-7. `front/`로 이동 → `npm install ...` 설치 → `npm run dev` 실행
+- 프로젝트 기획 및 서비스 아키텍처 설계
+- FastAPI 라우팅, 서비스 계층 및 DB 연동 구현
+- AIOps 파이프라인 설계 및 구현
+- OpenAI API 기반 LLM 응답 모듈 개발
+- 데이터 전처리와 CNN 학습·추론 파이프라인 구축
 
----
+### 김정윤
 
-## Contributors
+- 프로젝트 기획 및 서비스 아키텍처 설계
+- Vue 기반 모델 관리 화면 구현
+- Lot·Factory 관련 FastAPI API 설계 및 구현
+- 모델 학습·추론 결과 시각화와 프런트엔드 API 연동
+- 프런트엔드 UI/UX 및 상태 관리 개선
 
-- 전혜민 (SKALA 2기 4반)
+### 김유진
 
-  - 프로젝트 기획 및 서비스 아키텍처 설계
-  - FastAPI 백엔드 전반 설계 및 구현 (라우팅, 서비스 계층, DB 연동)
-  - AIOps 파이프라인 설계 및 구현
-  - LLM 응답 요청 모듈 개발 (OpenAI API 연동)
-  - 데이터 전처리 및 CNN 기반 모델 학습·추론 파이프라인 구축
+- 프로젝트 기획 및 서비스 아키텍처 설계
+- 서비스 와이어프레임 설계
+- Vue 기반 Image·Lot·Factory 화면 구현
+- 이미지 및 공정 분석 API 연동
 
-- 김정윤 (SKALA 2기 4반)
+## 개선 계획
 
-  - 프로젝트 기획 및 서비스 아키텍처 설계
-  - Vue.js 기반 모델 관리(Model Management) 탭 프론트엔드 구현
-  - Lot·Factory 탭 관련 FastAPI 라우터 및 API 설계·구현
-  - 프론트엔드와 백엔드 API 연동 (모델 학습/추론 결과 시각화, 관리 기능 포함)
-  - 프론트엔드 UI/UX 개선 및 상태 관리 로직 구현
-
-- 김유진 (SKALA 2기 4반)
-  - 프로젝트 기획 및 서비스 아키텍처 설계
-  - 서비스 와이어프레임 설계
-  - Vue.js 기반 이미지(Image)·로트(Lot)·공장(Factory) 탭 프론트엔드 구현
-  - 프론트엔드와 백엔드 API 연동 (모델 학습/추론 결과 시각화, 관리 기능 포함)
+- 실행 환경별 API URL을 환경변수로 분리
+- 운영 환경에 맞게 CORS 허용 범위 제한
+- 데이터 및 모델 버전 관리 체계 도입
+- 테스트 환경과 CI 파이프라인 구축
