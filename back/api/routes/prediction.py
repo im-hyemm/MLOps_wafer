@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from core.model.predictor import process_one_image, process_multi_images, process_multi_images_one_lot, process_labeled_images
 from utils.image_utils import convert_into_colored_img
 from config.paths import BEST_MODEL_PATH
-from config.settings import CLASSES
+from config.settings import CLASSES, RETRAIN_F1_THRESHOLD
 import pandas as pd
 from services.db import fetch_lot_process_history
 
@@ -168,7 +168,7 @@ async def upload_predict_labeled_images(file: UploadFile = File(...)):
              process_labeled_images, dataset, model_location=BEST_MODEL_PATH
              )
         
-        model_retrain = test_macro_f1_used < 0.7
+        model_retrain = test_macro_f1_used < RETRAIN_F1_THRESHOLD
         
         response = {
             "file_location": file_location,

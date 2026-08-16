@@ -8,20 +8,33 @@ TIMEZONE = pytz.timezone("Asia/Seoul")
 # 모델 설정
 NUM_CLASSES = 9
 TARGET_SIZE = (64, 64)
-BATCH_SIZE = 512
-EPOCHS = 100
+BATCH_SIZE = 32
+EPOCHS = 30
 PRESENTATION_EPOCHS = 2
 PRESENTATION_BATCH_SIZE = 10
+MODEL_RESIZE_MODE = "resize_pad_mask"
+MODEL_INPUT_CHANNELS = 2
+RETRAIN_F1_THRESHOLD = 0.7
 
 # 클래스 정의
-CLASSES = ["Center", "Donut", "Edge-Loc", "Edge-Ring", "Loc", "Random", "Scratch", "Near-full", "none"]
+CLASSES = [
+    "Center",
+    "Donut",
+    "Edge-Loc",
+    "Edge-Ring",
+    "Loc",
+    "Random",
+    "Scratch",
+    "Near-full",
+    "none",
+]
 ID2LABEL = {i: label for i, label in enumerate(CLASSES)}
 LABEL2ID = {label: i for i, label in enumerate(CLASSES)}
 
 # 학습 설정
-LEARNING_RATE = 1e-4
-WEIGHT_DECAY = 1e-5
-EARLY_STOPPING_PATIENCE = 10
+LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 1e-4
+EARLY_STOPPING_PATIENCE = 7
 SCHEDULER_PATIENCE = 3
 
 # vector store 설정 

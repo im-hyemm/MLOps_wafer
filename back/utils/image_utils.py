@@ -1,28 +1,125 @@
+from io import BytesIO
+
 import cv2
 import numpy as np
 from PIL import Image
-from io import BytesIO
+
 from config.settings import TARGET_SIZE
 
+
 def resize_and_pad(image, target_size=TARGET_SIZE):
-    """이미지의 가로세로 비율을 유지하면서 리사이즈하고 패딩"""
+    """이미지 비율을 유지해 리사이즈하고 패딩합니다.
+
+    Args:
+        image: 2차원 웨이퍼 맵 배열입니다.
+        target_size: 목표 높이와 너비입니다.
+
+    Returns:
+        패딩된 2차원 ``uint8`` 배열입니다.
+    """
+    image = np.asarray(image)
+    if image.ndim != 2 or 0 in image.shape:
+        raise ValueError("웨이퍼 맵은 비어 있지 않은 2차원 배열이어야 합니다.")
+
     target_h, target_w = target_size
-    h, w = image.shape
-    
-    scale = min(target_h / h, target_w / w)
-    new_h, new_w = int(h * scale), int(w * scale)
-    
-    resized_image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-    
+    height, width = image.shape
+    scale = min(target_h / height, target_w / width)
+    new_height = max(1, int(height * scale))
+    new_width = max(1, int(width * scale))
+    resized_image = cv2.resize(
+        image.astype(np.uint8),
+        (new_width, new_height),
+        interpolation=cv2.INTER_NEAREST,
+    )
     padded_image = np.zeros(target_size, dtype=np.uint8)
-    top = (target_h - new_h) // 2
-    left = (target_w - new_w) // 2
-    padded_image[top:top+new_h, left:left+new_w] = resized_image
-    
+    top = (target_h - new_height) // 2
+    left = (target_w - new_width) // 2
+    padded_image[
+        top:top + new_height,
+        left:left + new_width,
+    ] = resized_image
     return padded_image
 
+
+def resize_pad_with_mask(image, target_size=TARGET_SIZE):
+    """이미지 비율을 유지해 리사이즈하고 유효 영역 mask를 만듭니다.
+
+    Args:
+        image: 2차원 웨이퍼 맵 배열입니다.
+        target_size: 목표 높이와 너비입니다.
+
+    Returns:
+        패딩된 이미지와 유효 영역 mask의 튜플입니다.
+
+    Raises:
+        ValueError: 이미지가 비어 있거나 2차원이 아닌 경우 발생합니다.
+    """
+    image = np.asarray(image)
+    if image.ndim != 2 or 0 in image.shape:
+        raise ValueError("웨이퍼 맵은 비어 있지 않은 2차원 배열이어야 합니다.")
+
+    target_h, target_w = target_size
+    h, w = image.shape
+    scale = min(target_h / h, target_w / w)
+    new_h = max(1, int(round(h * scale)))
+    new_w = max(1, int(round(w * scale)))
+
+    resized_image = cv2.resize(
+        image.astype(np.uint8),
+        (new_w, new_h),
+        interpolation=cv2.INTER_NEAREST,
+    )
+
+    padded_image = np.zeros(target_size, dtype=np.uint8)
+    mask = np.zeros(target_size, dtype=np.uint8)
+    top = (target_h - new_h) // 2
+    left = (target_w - new_w) // 2
+    padded_image[top:top + new_h, left:left + new_w] = resized_image
+    mask[top:top + new_h, left:left + new_w] = 1
+
+    return padded_image, mask
+
+
+def preprocess_wafer_map(
+    image,
+    resize_mode="resize_pad",
+    target_size=TARGET_SIZE,
+):
+    """모델 입력 사양에 맞는 채널 우선 배열을 생성합니다.
+
+    Args:
+        image: 2차원 웨이퍼 맵 배열입니다.
+        resize_mode: ``resize_pad`` 또는 ``resize_pad_mask``입니다.
+        target_size: 목표 높이와 너비입니다.
+
+    Returns:
+        정규화된 ``(채널, 높이, 너비)`` float32 배열입니다.
+
+    Raises:
+        ValueError: 지원하지 않는 전처리 모드인 경우 발생합니다.
+    """
+    if resize_mode == "resize_pad":
+        padded = resize_and_pad(image, target_size)
+        wafer_channel = padded.astype(np.float32)[None, ...] / 2.0
+        return wafer_channel
+    if resize_mode == "resize_pad_mask":
+        padded, mask = resize_pad_with_mask(image, target_size)
+        wafer_channel = padded.astype(np.float32)[None, ...] / 2.0
+        mask_channel = mask.astype(np.float32)[None, ...]
+        return np.concatenate((wafer_channel, mask_channel), axis=0)
+
+    raise ValueError(f"지원하지 않는 전처리 모드입니다: {resize_mode}")
+
+
 def convert_into_colored_img(image_bytes_io):
-    """이미지를 컬러 이미지로 변환"""
+    """웨이퍼 맵 이미지를 RGBA 이미지로 변환합니다.
+
+    Args:
+        image_bytes_io: 원본 이미지 바이트 스트림입니다.
+
+    Returns:
+        PNG 형식의 메모리 버퍼입니다.
+    """
     image = Image.open(image_bytes_io)
     image = np.array(image)
     h, w = image.shape
@@ -32,10 +129,10 @@ def convert_into_colored_img(image_bytes_io):
     rgba[image == 1] = (192, 192, 192, 255)
     rgba[image == 2] = (255, 0, 0, 255)
     
-    colored_img = Image.fromarray(rgba, mode="RGBA")
-    
+    colored_img = Image.fromarray(rgba)
+
     colored_img_buf = BytesIO()
     colored_img.save(colored_img_buf, format="PNG")
     colored_img_buf.seek(0)
-    
+
     return colored_img_buf

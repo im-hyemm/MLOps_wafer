@@ -39,7 +39,11 @@ back/model/[0-9]*_model.pth
 presentation/
 presentation_data/
 training_data/
-/wafer_v2/
+notebooks/checkpoints/
+notebooks/__pycache__/
+notebooks/*.ipynb_checkpoints
+notebooks/data/
+notebooks/results.csv
 
 # Editor and OS files
 .vscode/*
