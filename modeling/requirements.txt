@@ -1,0 +1,10 @@
+# -*- coding: utf-8 -*-
+numpy>=1.26,<3
+pandas>=2.2,<3
+opencv-python-headless>=4.10,<5
+scikit-learn>=1.5,<2
+matplotlib>=3.8,<4
+tqdm>=4.66,<5
+# ipywidgets>=8,<9
+# Colab 기본 GPU torch는 유지한다. 로컬 CPU 설치법은 README를 참고한다.
+torch>=2.3,<3
