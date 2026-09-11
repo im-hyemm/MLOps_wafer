@@ -21,14 +21,14 @@ WaferGuard는 반도체 웨이퍼 맵을 분석해 결함 패턴을 분류하고
 
 ### 모델 구조
 
-| 단계 | 레이어 | 출력 형태 |
-| --- | --- | --- |
-| 입력 | 웨이퍼 맵 채널 + 유효 영역 mask 채널 | `2×64×64` |
-| 합성곱 블록 1 | `Conv2d(2→32, 3×3)` → BatchNorm → ReLU → MaxPool | `32×32×32` |
-| 합성곱 블록 2 | `Conv2d(32→64, 3×3)` → BatchNorm → ReLU → MaxPool | `64×16×16` |
-| 합성곱 블록 3 | `Conv2d(64→128, 3×3)` → BatchNorm → ReLU → MaxPool | `128×8×8` |
-| 합성곱 블록 4 | `Conv2d(128→256, 3×3)` → BatchNorm → ReLU → AdaptiveAvgPool | `256×1×1` |
-| 분류기 | Flatten → Dropout(`0.5`) → Linear(`256→9`) | 클래스 logit 9개 |
+| 단계          | 레이어                                                      | 출력 형태        |
+| ------------- | ----------------------------------------------------------- | ---------------- |
+| 입력          | 웨이퍼 맵 채널 + 유효 영역 mask 채널                        | `2×64×64`        |
+| 합성곱 블록 1 | `Conv2d(2→32, 3×3)` → BatchNorm → ReLU → MaxPool            | `32×32×32`       |
+| 합성곱 블록 2 | `Conv2d(32→64, 3×3)` → BatchNorm → ReLU → MaxPool           | `64×16×16`       |
+| 합성곱 블록 3 | `Conv2d(64→128, 3×3)` → BatchNorm → ReLU → MaxPool          | `128×8×8`        |
+| 합성곱 블록 4 | `Conv2d(128→256, 3×3)` → BatchNorm → ReLU → AdaptiveAvgPool | `256×1×1`        |
+| 분류기        | Flatten → Dropout(`0.5`) → Linear(`256→9`)                  | 클래스 logit 9개 |
 
 학습 시 클래스 평균 크기 기준 오버샘플링과 좌우·상하 반전, ±15도 회전 증강을 적용합니다. 손실 함수는 Cross Entropy, optimizer는 Adam을 사용하며 validation Macro F1을 기준으로 가장 좋은 epoch의 가중치를 선택합니다.
 
@@ -56,13 +56,13 @@ flowchart LR
 
 ## 기술 스택
 
-| 영역 | 기술 |
-| --- | --- |
-| Frontend | Vue 3, Vite, Axios, Chart.js, Bootstrap |
-| Backend | FastAPI, Pydantic, Uvicorn |
-| ML | PyTorch, torchvision, scikit-learn, OpenCV |
-| Database | PostgreSQL, psycopg2 |
-| LLM/RAG | OpenAI API, LangChain, FAISS, PyMuPDF |
+| 영역     | 기술                                       |
+| -------- | ------------------------------------------ |
+| Frontend | Vue 3, Vite, Axios, Chart.js, Bootstrap    |
+| Backend  | FastAPI, Pydantic, Uvicorn                 |
+| ML       | PyTorch, torchvision, scikit-learn, OpenCV |
+| Database | PostgreSQL, psycopg2                       |
+| LLM/RAG  | OpenAI API, LangChain, FAISS, PyMuPDF      |
 
 ## 프로젝트 구조
 
@@ -214,28 +214,28 @@ npm run dev
 
 ## 환경변수
 
-| 변수 | 필수 여부 | 설명 | 기본값 |
-| --- | --- | --- | --- |
-| `OPENAI_API_KEY` | LLM 기능 사용 시 | 임베딩 및 결함 설명에 사용하는 OpenAI API 키 | 없음 |
-| `DB_NAME` | 필수 | PostgreSQL 데이터베이스 이름 | 없음 |
-| `DB_USER` | 필수 | PostgreSQL 사용자 | 없음 |
-| `DB_PASSWORD` | 필수 | PostgreSQL 비밀번호 | 없음 |
-| `DB_HOST` | 필수 | PostgreSQL 호스트 | 없음 |
-| `DB_PORT` | 필수 | PostgreSQL 포트 | 없음 |
-| `DB_POOL_MIN` | 선택 | 최소 DB 연결 수 | `1` |
-| `DB_POOL_MAX` | 선택 | 최대 DB 연결 수 | `5` |
-| `DB_CONNECT_TIMEOUT` | 선택 | DB 연결 제한 시간(초) | `5` |
-| `BASE_DIR` | 선택 | 백엔드 리소스의 기준 경로 | 현재 `back` 경로 |
+| 변수                 | 필수 여부        | 설명                                         | 기본값           |
+| -------------------- | ---------------- | -------------------------------------------- | ---------------- |
+| `OPENAI_API_KEY`     | LLM 기능 사용 시 | 임베딩 및 결함 설명에 사용하는 OpenAI API 키 | 없음             |
+| `DB_NAME`            | 필수             | PostgreSQL 데이터베이스 이름                 | 없음             |
+| `DB_USER`            | 필수             | PostgreSQL 사용자                            | 없음             |
+| `DB_PASSWORD`        | 필수             | PostgreSQL 비밀번호                          | 없음             |
+| `DB_HOST`            | 필수             | PostgreSQL 호스트                            | 없음             |
+| `DB_PORT`            | 필수             | PostgreSQL 포트                              | 없음             |
+| `DB_POOL_MIN`        | 선택             | 최소 DB 연결 수                              | `1`              |
+| `DB_POOL_MAX`        | 선택             | 최대 DB 연결 수                              | `5`              |
+| `DB_CONNECT_TIMEOUT` | 선택             | DB 연결 제한 시간(초)                        | `5`              |
+| `BASE_DIR`           | 선택             | 백엔드 리소스의 기준 경로                    | 현재 `back` 경로 |
 
 ## 재학습 데이터 형식
 
 모델 평가 및 재학습 API는 pandas DataFrame을 저장한 pickle 파일을 입력으로 사용합니다.
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `waferMap` | 2차원 웨이퍼 맵 배열 |
+| 컬럼          | 설명                                |
+| ------------- | ----------------------------------- |
+| `waferMap`    | 2차원 웨이퍼 맵 배열                |
 | `failureType` | 9개 분류 클래스 중 하나인 정답 라벨 |
-| `lotName` | 웨이퍼가 속한 Lot 식별자 |
+| `lotName`     | 웨이퍼가 속한 Lot 식별자            |
 
 업로드 데이터에서 현재 모델의 Macro F1이 `0.7` 미만이면 재학습을 추천하며, 실제 학습은 사용자가 화면의 재학습 버튼을 눌렀을 때 시작합니다. 재학습 후보는 다음 절차로 생성하고 승격합니다.
 
@@ -247,14 +247,14 @@ npm run dev
 
 ## 주요 API
 
-| Method | Endpoint | 설명 |
-| --- | --- | --- |
-| `POST` | `/predict_img` | 단일 웨이퍼 이미지 예측 |
-| `POST` | `/predict_multi_images_one_lot` | 단일 Lot의 다중 이미지 예측 |
-| `POST` | `/predict_multi_images_multi_lots` | 여러 Lot의 다중 이미지 예측 |
-| `POST` | `/upload_predict_labeled_images` | 라벨 데이터 업로드 및 기존 모델 평가 |
-| `POST` | `/retrain_predict_labeled_images` | 모델 재학습, 성능 비교 및 모델 교체 |
-| `POST` | `/explanation/get_llm_response` | 결함률과 결함 분포를 기반으로 원인 설명 생성 |
+| Method | Endpoint                           | 설명                                         |
+| ------ | ---------------------------------- | -------------------------------------------- |
+| `POST` | `/predict_img`                     | 단일 웨이퍼 이미지 예측                      |
+| `POST` | `/predict_multi_images_one_lot`    | 단일 Lot의 다중 이미지 예측                  |
+| `POST` | `/predict_multi_images_multi_lots` | 여러 Lot의 다중 이미지 예측                  |
+| `POST` | `/upload_predict_labeled_images`   | 라벨 데이터 업로드 및 기존 모델 평가         |
+| `POST` | `/retrain_predict_labeled_images`  | 모델 재학습, 성능 비교 및 모델 교체          |
+| `POST` | `/explanation/get_llm_response`    | 결함률과 결함 분포를 기반으로 원인 설명 생성 |
 
 ## 팀원별 역할
 
@@ -280,10 +280,3 @@ npm run dev
 - 서비스 와이어프레임 설계
 - Vue 기반 Image·Lot·Factory 화면 구현
 - 이미지 및 공정 분석 API 연동
-
-## 개선 계획
-
-- 실행 환경별 API URL을 환경변수로 분리
-- 운영 환경에 맞게 CORS 허용 범위 제한
-- 데이터 및 모델 버전 관리 체계 도입
-- 테스트 환경과 CI 파이프라인 구축
