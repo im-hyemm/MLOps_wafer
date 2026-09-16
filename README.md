@@ -1,272 +1,179 @@
 # WaferGuard
 
-> CNN 기반 웨이퍼 결함 분류와 논문 기반 원인 분석을 결합한 MLOps 서비스
+> **반도체 웨이퍼 품질 관리 AI 서비스**
 
-WaferGuard는 반도체 웨이퍼 맵을 분석해 결함 패턴을 분류하고, Lot별 공정 이력과 결함 통계를 제공합니다. 재학습한 모델과 기존 모델의 성능을 비교해 더 나은 모델을 반영하며, 결함률이 높은 Lot에는 관련 논문을 검색해 LLM 기반 원인 설명과 점검 항목을 제공합니다.
+WaferGuard는 반도체 제조 과정에서 생성되는 **웨이퍼 맵을 AI로 분석해 결함 유형을 분류하고, Lot 단위의 품질 현황과 공정 이력을 함께 확인할 수 있도록 만든 서비스**입니다.
 
-## 주요 기능
+## 한눈에 보기
 
-- 단일 웨이퍼 이미지의 결함 유형 및 신뢰도 예측
-- 단일 Lot 및 다중 Lot 단위의 결함률·유형별 통계 분석
-- PostgreSQL에 저장된 Lot별 공정 장비 및 레시피 이력 조회
-- 라벨 데이터 업로드를 통한 기존 모델 성능 평가
-- Macro F1 임계치 기반 수동 재학습 및 동일 테스트셋 모델 승격
-- FAISS 문헌 검색과 OpenAI API를 활용한 결함 원인 및 점검 항목 설명
+| 구분 | 내용 |
+|---|---|
+| 서비스 대상 | 반도체 제조사 품질관리팀 |
+| 프로젝트 기간 | 2025.09.10 ~ 2025.10.10 |
+| 프로젝트 인원 | 3인 — Backend·Data Science 1명 / Full-stack 1명 / Frontend 1명 |
+| 해결 과제 | 웨이퍼 불량 분류, Lot 품질 현황 파악, 모델 성능 유지, 불량 원인 탐색 |
+| 핵심 기능 | 9-class 결함 분류, Lot 통계·공정 이력, 모델 평가·재학습, 문헌 기반 LLM 설명 |
+| 데이터 | WM-811K 중 라벨이 존재하는 웨이퍼 맵 172,950개 |
+| 모델 성능 | Test Accuracy 97.7%, Macro-F1 0.8780 ± 0.0032 |
+| Data Science | Python, PyTorch, scikit-learn, pandas, NumPy, OpenCV |
+| Backend | FastAPI, Pydantic, PostgreSQL, LangChain, FAISS, OpenAI API |
+| Frontend | Vue 3, Vite, Axios, Chart.js, Bootstrap |
+| 프로젝트 성과 | SKALA MLOps mini-project 1위, SKALA 2기 우수 프로젝트 선정 |
 
-분류 대상은 `Center`, `Donut`, `Edge-Loc`, `Edge-Ring`, `Loc`, `Random`, `Scratch`, `Near-full`, `none`의 9개 클래스입니다.
+> [!NOTE]
+> **전혜민(본인) 담당 영역**  
+> 데이터 분석·모델링, FastAPI Backend, 모델 평가·재학습 파이프라인, LLM/RAG
 
-## 배포 모델
+## 프로젝트 배경과 문제 정의
 
-현재 배포 모델은 웨이퍼 맵과 유효 영역 mask를 함께 사용하는 2채널 CNN입니다. 원본 웨이퍼 맵의 가로세로 비율을 유지해 `64×64`로 리사이즈·패딩하고, 패딩이 아닌 영역을 표시하는 mask를 두 번째 채널로 결합해 `(2, 64, 64)` 입력을 생성합니다.
+웨이퍼는 반도체 칩이 만들어지는 원형 기판입니다. 제조 공정이 끝나면 각 칩의 검사 결과를 위치별로 표시한 **웨이퍼 맵**이 생성됩니다. 웨이퍼 맵에 나타나는 결함의 모양과 위치는 공정 이상을 추적하는 단서가 됩니다.
 
-### 모델 구조
+이 프로젝트에서는 품질관리 업무와 관련된 네 가지 과제를 정의하고 서비스 기능으로 연결했습니다.
 
-| 단계          | 레이어                                                      | 출력 형태        |
-| ------------- | ----------------------------------------------------------- | ---------------- |
-| 입력          | 웨이퍼 맵 채널 + 유효 영역 mask 채널                        | `2×64×64`        |
-| 합성곱 블록 1 | `Conv2d(2→32, 3×3)` → BatchNorm → ReLU → MaxPool            | `32×32×32`       |
-| 합성곱 블록 2 | `Conv2d(32→64, 3×3)` → BatchNorm → ReLU → MaxPool           | `64×16×16`       |
-| 합성곱 블록 3 | `Conv2d(64→128, 3×3)` → BatchNorm → ReLU → MaxPool          | `128×8×8`        |
-| 합성곱 블록 4 | `Conv2d(128→256, 3×3)` → BatchNorm → ReLU → AdaptiveAvgPool | `256×1×1`        |
-| 분류기        | Flatten → Dropout(`0.5`) → Linear(`256→9`)                  | 클래스 logit 9개 |
+| 품질관리 과제 | 프로젝트에서 정의한 문제 | 구현한 대응 |
+|---|---|---|
+| 반복적인 육안검사에는 시간과 인력이 필요하고 작업자에 따라 판단이 달라질 수 있음 | 웨이퍼의 정상 여부뿐 아니라 결함 유형까지 빠르게 구분해야 함 | Vision AI가 정상과 8개 불량 유형을 자동 분류하고 신뢰도를 제공 |
+| 웨이퍼 규격·장비·공정 조건이 달라지면 기존 모델의 성능이 낮아질 수 있음 | 배포 이후에도 새 데이터로 모델 성능을 확인하고 갱신할 방법이 필요함 | 라벨 데이터로 현재 모델을 평가하고, 필요하면 재학습한 후보와 비교해 더 나은 모델만 승격 |
+| Lot별 불량 현황과 공정 이력이 분리되어 있으면 원인 탐색에 시간이 걸림 | 결함 결과와 장비·레시피 이력을 한 흐름에서 확인해야 함 | Lot별 결함 통계와 PostgreSQL의 공정 이력을 함께 제공 |
+| 비숙련자는 결함 유형을 확인해도 원인과 점검 순서를 정하기 어려움 | 분석 결과를 실제 점검 행동으로 연결할 보조 정보가 필요함 | 관련 반도체 문헌을 검색해 LLM이 가능한 원인과 우선 점검 항목을 참고문헌과 함께 제안 |
 
-학습 시 클래스 평균 크기 기준 오버샘플링과 좌우·상하 반전, ±15도 회전 증강을 적용합니다. 손실 함수는 Cross Entropy, optimizer는 Adam을 사용하며 validation Macro F1을 기준으로 가장 좋은 epoch의 가중치를 선택합니다.
+실제 제조 현장의 운영 효과까지 검증한 단계는 아니므로 시간·비용 절감을 정량 성과로 주장하지 않습니다. 본 프로젝트에서는 품질관리 과제를 기능으로 구체화하고, 모델 성능과 전체 서비스 동작을 검증하는 데 집중했습니다.
 
-### 모델 선택 근거
+## 서비스 흐름
 
-현재 모델 구조와 전처리 방식은 [`notebooks/modeling.ipynb`](notebooks/modeling.ipynb)의 비교 실험을 바탕으로 선택했습니다. 해당 노트북에서 고정 크기 resize, 비율 유지 resize·padding, 데이터 증강, 클래스 오버샘플링, 유효 영역 mask 채널의 조합을 비교했으며, 최종적으로 비율 유지 resize·padding과 mask 채널, 오버샘플링, 데이터 증강을 함께 사용하는 구성을 채택했습니다.
+### 웨이퍼 품질 분석
 
-- `back/model/best_model.pth`: 서비스에서 사용하는 2채널 모델
-- `back/model/best_model_legacy.pth`: 교체 전 1채널 모델의 롤백용 가중치
-- `back/model/presentation_model.pth`: 기존 발표용 1채널 모델
+품질관리 담당자는 분석 범위에 따라 단일 웨이퍼, 단일 Lot 또는 여러 Lot의 데이터를 입력합니다.
 
-모델 로더는 metadata가 포함된 2채널 checkpoint bundle과 기존 raw `state_dict` 형식을 모두 지원합니다. 체크포인트에 따라 2채널 모델에는 반올림 기반 resize와 mask를 적용하고, 기존 1채널 모델에는 종전의 정수 절삭 resize를 적용합니다.
-
-## 시스템 아키텍처
+- **단일 웨이퍼:** 한 장의 결함 유형과 예측 신뢰도 확인
+- **단일 Lot:** 같은 Lot에 속한 여러 웨이퍼의 불량률과 유형별 분포 확인
+- **다중 Lot:** 여러 Lot의 불량률을 비교하고 우선 확인할 Lot 탐색
 
 ```mermaid
 flowchart LR
-    U["사용자"] --> F["Vue 3 대시보드"]
+    A["웨이퍼 맵 입력"] --> B["AI 결함 분류"]
+    B --> C["웨이퍼별 유형·신뢰도"]
+    B --> D["Lot별 불량률·결함 분포"]
+    D --> E["장비·레시피 이력 조회"]
+    D --> F{"불량률이 높은가?"}
+    F -->|Yes| G["문헌 기반 LLM 설명"]
+    F -->|No| H["분석 결과 확인"]
+```
+
+분류 대상은 `Center`, `Donut`, `Edge-Loc`, `Edge-Ring`, `Loc`, `Random`, `Scratch`, `Near-full`, `none`의 9개 클래스입니다.
+
+AI 분류 결과는 Lot별 정상·불량 수와 결함 유형 분포로 집계됩니다. PostgreSQL의 장비·레시피 이력을 함께 조회하고, 불량률이 높은 Lot에는 관련 논문을 근거로 가능한 원인과 우선 점검 항목을 제공합니다.
+
+### 모델 성능 평가와 재학습
+
+라벨이 있는 새로운 웨이퍼 데이터를 업로드하면 현재 배포 모델의 9-class Macro-F1을 다시 측정합니다.
+
+```mermaid
+flowchart TD
+    A["새 라벨 데이터 업로드"] --> B["현재 모델 Macro-F1 평가"]
+    B --> C{"Macro-F1 < 0.7?"}
+    C -->|No| D["현재 모델 유지"]
+    C -->|Yes| E["재학습 권장"]
+    E --> F["사용자가 재학습 실행"]
+    F --> G["후보 모델 학습"]
+    G --> H["동일 Test 데이터에서<br/>현재·후보 모델 비교"]
+    H --> I{"후보가 더 우수한가?"}
+    I -->|Yes| J["배포 모델 교체"]
+    I -->|No| D
+```
+
+재학습은 성능이 낮아졌다는 이유만으로 즉시 실행되지 않습니다. 시스템이 재학습 필요 여부를 안내하면 사용자가 실행을 결정하고, 새 후보의 반올림 전 Macro-F1이 기존 모델보다 높을 때만 배포 checkpoint를 교체합니다.
+
+## 시스템 구성과 프로젝트 구조
+
+```mermaid
+flowchart LR
+    U["품질관리 담당자"] --> F["Vue 3 대시보드"]
     F --> A["FastAPI"]
-    A --> M["PyTorch CNN<br/>학습 및 추론"]
+
+    A --> M["PyTorch ResidualCNN<br/>학습·추론"]
     A --> D["PostgreSQL<br/>Lot 공정 이력"]
     A --> R["LangChain + FAISS<br/>문헌 검색"]
-    R --> L["OpenAI API<br/>결함 원인 설명"]
+    R --> L["OpenAI API<br/>원인·점검 항목 설명"]
+
+    M --> C["배포 checkpoint"]
+    M --> E["성능 평가·재학습"]
+    E --> C
 ```
 
-## 기술 스택
-
-| 영역     | 기술                                       |
-| -------- | ------------------------------------------ |
-| Frontend | Vue 3, Vite, Axios, Chart.js, Bootstrap    |
-| Backend  | FastAPI, Pydantic, Uvicorn                 |
-| ML       | PyTorch, torchvision, scikit-learn, OpenCV |
-| Database | PostgreSQL, psycopg2                       |
-| LLM/RAG  | OpenAI API, LangChain, FAISS, PyMuPDF      |
-
-## 프로젝트 구조
+| 영역 | 역할 | 주요 기술 |
+|---|---|---|
+| Frontend | 데이터 업로드, 예측 결과와 Lot 통계 시각화, 재학습 요청 | Vue 3, Vite, Axios, Chart.js, Bootstrap |
+| Backend API | 요청 검증, 예측·평가·재학습·설명 API 제공 | FastAPI, Pydantic, Uvicorn |
+| Modeling | 웨이퍼 전처리, CNN 학습·추론, 성능 평가 | PyTorch, scikit-learn, OpenCV |
+| Database | Lot별 공정 장비와 레시피 이력 관리 | PostgreSQL, psycopg2 |
+| LLM/RAG | 관련 논문 검색과 원인·점검 항목 설명 | LangChain, FAISS, PyMuPDF, OpenAI API |
 
 ```text
 MLOps_wafer/
-├── back/
-│   ├── api/
-│   │   └── routes/               # 예측, 재학습, LLM 설명 API
-│   ├── config/                   # 환경, 모델, 경로 및 DB 설정
-│   ├── core/
-│   │   ├── data/                 # 학습·추론 PyTorch Dataset
-│   │   ├── evaluation/           # 평가지표와 confusion matrix
-│   │   └── model/                # CNN 구조, 추론, 재학습 파이프라인
-│   ├── model/
-│   │   ├── best_model.pth        # 현재 배포 2채널 모델
-│   │   ├── best_model_legacy.pth # 롤백용 기존 1채널 모델
-│   │   └── presentation_model.pth
-│   ├── paper/                    # RAG 검색 대상 논문
-│   ├── scripts/                  # 문헌 인덱스 생성 스크립트
-│   ├── services/                 # PostgreSQL 및 LLM 서비스
-│   ├── tests/                    # API·모델·재학습 테스트
-│   ├── utils/                    # 이미지·파일 공통 기능
-│   ├── .env.example
-│   ├── create_db.py
-│   └── main.py                   # FastAPI 진입점
-├── front/
-│   ├── src/
-│   │   ├── components/           # 공통 UI 컴포넌트
-│   │   ├── pages/                # 단일·Lot·pickle 분석 화면
-│   │   └── router/               # Vue Router 설정
-│   ├── package.json
-│   └── vite.config.js
-├── notebooks/
-│   ├── EDA.ipynb                 # 웨이퍼 데이터 탐색
-│   ├── modeling.ipynb            # 모델 구조·전처리 비교 및 선택 근거
-│   ├── data/                     # 실험 데이터(Git 제외)
-│   ├── checkpoints/              # 실험 가중치(Git 제외)
-│   └── results.csv               # 실험 결과(Git 제외)
-├── .gitignore
-└── README.md
+├── modeling/                  # EDA, 비교 실험, 최종 모델 선정
+│   ├── compare_experiments.ipynb
+│   ├── config.py
+│   ├── data.py
+│   ├── preprocessing.py
+│   ├── models.py
+│   ├── training.py
+│   ├── evaluation.py
+│   ├── docs/                 # 실험 설계·결과 보고서와 시각화
+│   └── tests/
+├── back/                      # FastAPI 기반 추론·모델 운영 서비스
+│   ├── api/routes/           # 예측·재학습·LLM API
+│   ├── core/model/           # ResidualCNN, 추론, 재학습
+│   ├── core/evaluation/      # 평가지표와 혼동행렬
+│   ├── services/             # PostgreSQL과 LLM/RAG
+│   ├── model/                # 배포 checkpoint
+│   └── tests/
+├── front/                     # Vue 기반 품질 관리 대시보드
+│   └── src/
+│       ├── pages/
+│       └── components/
+├── README.md
+└── .gitignore
 ```
 
-## 데이터셋 준비
+## 모델링 결과
 
-모델링에는 Kaggle의 [WM-811K Wafer Map 데이터셋](https://www.kaggle.com/datasets/qingyi/wm811k-wafer-map/data)을 사용합니다. 원본 데이터는 저장소에 포함하지 않으므로 모델링 노트북을 실행하기 전에 별도로 내려받아야 합니다.
+모델 구조, 학습 방법, 입력 전처리를 순차적으로 비교해 최종적으로 `ResidualCNN + 종횡비 유지 Resize/Pad + Cross Entropy + 증강 없음`을 선택했습니다. 최종 설정을 확정하기 전까지 Test 데이터는 모델 선택에 사용하지 않았습니다.
 
-다운로드한 압축 파일을 해제하고 `LSWMD.pkl`을 다음 위치에 저장합니다.
+| 지표 | 결과 |
+|---|---:|
+| Validation Macro-F1 | 0.8582 → **0.8851** |
+| Test Accuracy | 97.64% ± 0.03%p |
+| Test Macro-F1 | **0.8780 ± 0.0032** |
+| Test 최저 클래스 F1 | 0.7840 ± 0.0061 |
 
-```text
-MLOps_wafer/
-└── notebooks/
-    └── data/
-        └── LSWMD.pkl
-```
+![Seed별 Validation 및 Test 성능](modeling/docs/images/12_seed_stability.png)
 
-Kaggle CLI 설치와 API 인증이 완료되어 있다면 프로젝트 루트에서 다음 명령으로 받을 수 있습니다.
+실험 가설, 평가 지표 선정, 모델·학습법·전처리 비교와 클래스별 오류 분석은 아래 문서에서 확인할 수 있습니다.
 
-```powershell
-New-Item -ItemType Directory -Force notebooks\data
-kaggle datasets download -d qingyi/wm811k-wafer-map -p notebooks\data --unzip
-```
+- [모델링 개요와 재현 방법](modeling/README.md)
+- [전체 실험 결과 보고서](modeling/docs/wafer_defect_classification_result.md)
+- [실험 설계와 비교 조건](modeling/docs/experiment_design.md)
+- [Colab 실험 노트북](modeling/compare_experiments.ipynb)
 
-다운로드 후 파일 경로가 `notebooks/data/LSWMD.pkl`인지 확인합니다. [`notebooks/modeling.ipynb`](notebooks/modeling.ipynb)은 `data/LSWMD.pkl` 상대 경로를 사용하므로 다음과 같이 `notebooks`에서 Jupyter를 실행합니다.
+## 팀 구성과 역할
 
-```powershell
-cd notebooks
-jupyter notebook
-```
+기획과 서비스 아키텍처는 세 팀원이 함께 논의했으며, 구현은 아래와 같이 분담했습니다.
 
-`notebooks/data/`와 노트북에서 생성하는 `notebooks/checkpoints/`, `notebooks/results.csv`는 `.gitignore`에 등록되어 로컬에만 보관됩니다. 백엔드의 `back/data/`는 업로드된 평가·재학습 데이터를 저장하는 별도 경로이므로 원본 모델링 데이터는 `notebooks/data/`에 둡니다.
+> [!IMPORTANT]
+> **저장소 안내**  
+> 프로젝트 진행 당시에는 GitHub를 협업 도구로 사용하지 않았으며, 프로젝트 종료 후 전혜민이 팀 산출물을 통합해 이 저장소에 업로드했습니다. 따라서 현재 Git 커밋 이력은 프로젝트 당시의 작업 순서나 팀원별 기여를 그대로 나타내지 않습니다. 실제 기여 범위는 아래 역할 분담을 기준으로 정리했습니다.
 
-## 실행 환경
-
-- Python 3.10 이상, 3.11 권장
-- PostgreSQL 13 이상
-- Node.js 18 이상 및 npm
-
-## 로컬 실행 방법
-
-### 1. 백엔드 환경 구성
-
-프로젝트 루트에서 `back` 디렉터리로 이동한 후 가상환경을 구성합니다.
-
-Windows PowerShell:
-
-```powershell
-cd back
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-macOS/Linux:
-
-```bash
-cd back
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-복사한 `.env`에서 OpenAI API 키와 PostgreSQL 접속 정보를 실제 환경에 맞게 수정합니다.
-
-### 2. 데이터베이스 초기화
-
-PostgreSQL 서버를 실행한 다음 아래 명령을 사용합니다.
-
-```bash
-python create_db.py
-```
-
-> 주의: `create_db.py`는 `.env`의 `DB_NAME`과 같은 데이터베이스가 존재하면 삭제하고 다시 생성합니다. 보존해야 하는 데이터베이스 이름을 사용하지 마세요.
-
-### 3. 문헌 인덱스 생성
-
-LLM 설명 기능을 사용하려면 OpenAI API 키를 설정한 후 문헌 인덱스를 생성합니다.
-
-```bash
-python -m scripts.build_paper_index
-```
-
-새 문헌이 추가되면 서비스가 인덱스를 주기적으로 갱신합니다.
-
-### 4. 백엔드 실행
-
-`back` 디렉터리에서 다음 명령을 실행합니다.
-
-```bash
-python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-```
-
-서버가 실행되면 [Swagger UI](http://localhost:8001/docs)에서 API를 확인할 수 있습니다.
-
-### 5. 프런트엔드 실행
-
-새 터미널에서 프로젝트의 `front` 디렉터리로 이동합니다.
-
-```bash
-cd front
-npm install
-npm run dev
-```
-
-브라우저에서 `http://localhost:5173`으로 접속합니다.
-
-## 환경변수
-
-| 변수                 | 필수 여부        | 설명                                         | 기본값           |
-| -------------------- | ---------------- | -------------------------------------------- | ---------------- |
-| `OPENAI_API_KEY`     | LLM 기능 사용 시 | 임베딩 및 결함 설명에 사용하는 OpenAI API 키 | 없음             |
-| `DB_NAME`            | 필수             | PostgreSQL 데이터베이스 이름                 | 없음             |
-| `DB_USER`            | 필수             | PostgreSQL 사용자                            | 없음             |
-| `DB_PASSWORD`        | 필수             | PostgreSQL 비밀번호                          | 없음             |
-| `DB_HOST`            | 필수             | PostgreSQL 호스트                            | 없음             |
-| `DB_PORT`            | 필수             | PostgreSQL 포트                              | 없음             |
-| `DB_POOL_MIN`        | 선택             | 최소 DB 연결 수                              | `1`              |
-| `DB_POOL_MAX`        | 선택             | 최대 DB 연결 수                              | `5`              |
-| `DB_CONNECT_TIMEOUT` | 선택             | DB 연결 제한 시간(초)                        | `5`              |
-| `BASE_DIR`           | 선택             | 백엔드 리소스의 기준 경로                    | 현재 `back` 경로 |
-
-## 재학습 데이터 형식
-
-모델 평가 및 재학습 API는 pandas DataFrame을 저장한 pickle 파일을 입력으로 사용합니다.
-
-| 컬럼          | 설명                                |
-| ------------- | ----------------------------------- |
-| `waferMap`    | 2차원 웨이퍼 맵 배열                |
-| `failureType` | 9개 분류 클래스 중 하나인 정답 라벨 |
-| `lotName`     | 웨이퍼가 속한 Lot 식별자            |
-
-업로드 데이터에서 현재 모델의 Macro F1이 `0.7` 미만이면 재학습을 추천하며, 실제 학습은 사용자가 화면의 재학습 버튼을 눌렀을 때 시작합니다. 재학습 후보는 다음 절차로 생성하고 승격합니다.
-
-1. seed 42와 클래스 계층화를 사용해 데이터를 학습 80%, 검증 10%, 테스트 10%로 분할합니다.
-2. 학습 데이터에만 클래스 평균 크기 오버샘플링과 좌우·상하 반전, ±15도 회전 증강을 적용합니다.
-3. 2채널 CNN을 새 초기 가중치부터 학습하고 검증 Macro F1이 가장 높은 가중치를 저장합니다.
-4. 후보와 현재 배포 모델을 동일한 테스트 데이터에서 9개 클래스 기준 Macro F1으로 평가합니다.
-5. 후보 점수가 엄격하게 더 높을 때만 `best_model.pth`를 원자적으로 교체합니다. 학습·평가·파일 교체가 실패하거나 후보 점수가 낮으면 기존 모델을 유지합니다.
-
-## 주요 API
-
-| Method | Endpoint                           | 설명                                         |
-| ------ | ---------------------------------- | -------------------------------------------- |
-| `POST` | `/predict_img`                     | 단일 웨이퍼 이미지 예측                      |
-| `POST` | `/predict_multi_images_one_lot`    | 단일 Lot의 다중 이미지 예측                  |
-| `POST` | `/predict_multi_images_multi_lots` | 여러 Lot의 다중 이미지 예측                  |
-| `POST` | `/upload_predict_labeled_images`   | 라벨 데이터 업로드 및 기존 모델 평가         |
-| `POST` | `/retrain_predict_labeled_images`  | 모델 재학습, 성능 비교 및 모델 교체          |
-| `POST` | `/explanation/get_llm_response`    | 결함률과 결함 분포를 기반으로 원인 설명 생성 |
-
-## 팀원별 역할
-
-### 전혜민
+### 전혜민(본인) — Backend·Data Science / MLOps
 
 - 프로젝트 기획 및 서비스 아키텍처 설계
-- FastAPI 라우팅, 서비스 계층 및 DB 연동 구현
-- AIOps 파이프라인 설계 및 구현
-- OpenAI API 기반 LLM 응답 모듈 개발
-- 데이터 전처리와 CNN 학습·추론 파이프라인 구축
+- 데이터 탐색, 전처리와 CNN 비교 실험
+- 최종 모델 선정과 학습·추론 파이프라인 구축
+- FastAPI 라우팅, 서비스 계층 및 PostgreSQL 연동
+- 새 데이터 평가, 재학습, 기존·후보 모델 비교와 모델 승격 구현
+- OpenAI API와 문헌 검색을 활용한 LLM 응답 모듈 개발
 
-### 김정윤
+### 김정윤 — Full-stack
 
 - 프로젝트 기획 및 서비스 아키텍처 설계
 - Vue 기반 모델 관리 화면 구현
@@ -274,9 +181,72 @@ npm run dev
 - 모델 학습·추론 결과 시각화와 프런트엔드 API 연동
 - 프런트엔드 UI/UX 및 상태 관리 개선
 
-### 김유진
+### 김유진 — Frontend / UI 설계
 
 - 프로젝트 기획 및 서비스 아키텍처 설계
 - 서비스 와이어프레임 설계
 - Vue 기반 Image·Lot·Factory 화면 구현
 - 이미지 및 공정 분석 API 연동
+
+모델링 실험과 학습·추론 파이프라인은 [`modeling/`](modeling/README.md), 모델 평가·재학습·LLM/RAG를 포함한 서비스 구현은 [`back/`](back/README.md)에서 자세히 확인할 수 있습니다. [`front/`](front/README.md)는 팀원들이 구현한 통합 서비스 화면입니다.
+
+## 실행 방법
+
+### 요구 환경
+
+- Python 3.10 이상, 3.11 권장
+- PostgreSQL 13 이상
+- Node.js 18 이상
+- LLM 기능 사용 시 OpenAI API 키
+
+### Backend
+
+```powershell
+cd back
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+python create_db.py
+python -m scripts.build_paper_index
+python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+> `create_db.py`는 `.env`의 `DB_NAME`과 같은 데이터베이스가 존재하면 삭제하고 다시 생성합니다. 보존해야 하는 데이터베이스 이름을 사용하지 마세요.
+
+서버가 실행되면 `http://localhost:8001/docs`에서 Swagger UI를 확인할 수 있습니다.
+
+### Frontend
+
+```powershell
+cd front
+npm install
+npm run dev
+```
+
+브라우저에서 `http://localhost:5173`으로 접속합니다. 자세한 환경변수, API, 테스트 방법은 [Backend 문서](back/README.md)를 참고해 주세요.
+
+## 데이터셋
+
+모델링에는 [WM-811K Wafer Map 데이터셋](https://www.kaggle.com/datasets/qingyi/wm811k-wafer-map/data)을 사용했습니다. 원본 811,457개 중 결함 라벨이 있는 172,950개를 학습과 평가에 사용했습니다.
+
+원본 데이터는 용량과 라이선스를 고려해 저장소에 포함하지 않았습니다. 모델링을 재현하려면 `LSWMD.pkl`을 별도로 내려받아 Colab 프로젝트의 `data/` 디렉터리에 배치해야 합니다.
+
+## 한계와 다음 과제
+
+- 실제 반도체 제조 현장에서 업무 시간이나 비용 절감 효과를 검증하지는 못했습니다.
+- `Near-full` 등 희소 클래스는 Test 표본도 적어 추가 데이터 검증이 필요합니다.
+- `Scratch`, `Loc`, `Edge-Loc` 결함이 정상으로 분류되는 오류를 우선 줄여야 합니다.
+- 현재 재학습은 성능 저하를 안내한 뒤 사용자가 실행하는 방식입니다. 자동 실행에는 운영 정책과 승인 절차가 추가로 필요합니다.
+- 데이터 분포 변화 감지, 장기 성능 모니터링, 다중 서버의 모델 버전 관리는 추가 구현 과제입니다.
+- LLM 설명은 검색 문헌에 기반한 참고 정보이므로 전문가 검토 없이 공정 원인을 확정하는 용도로 사용할 수 없습니다.
+
+## 상세 문서
+
+| 문서 | 내용 |
+|---|---|
+| [Modeling README](modeling/README.md) | 문제 정의, 실험 과정, 최종 결과, 재현 방법 |
+| [실험 결과 보고서](modeling/docs/wafer_defect_classification_result.md) | 그래프, 클래스별 성능, 혼동행렬, 한계 |
+| [실험 설계](modeling/docs/experiment_design.md) | 단계별 비교 조건과 특징 정의 |
+| [Backend README](back/README.md) | API, 추론, 재학습, 모델 승격, LLM/RAG |
+| [Frontend README](front/README.md) | 화면 기능과 실행 방법 |
