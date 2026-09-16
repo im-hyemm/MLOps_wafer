@@ -2,15 +2,11 @@
 
 > **한 줄 요약**  정상 데이터가 85.24%인 불균형 환경에서 정확도 착시를 피하고, 모델·학습법·전처리를 순차 검증해 validation Macro-F1을 **0.8582에서 0.8851로 2.68%p 개선**했다. 최종 설정은 독립 test에서 **Macro-F1 0.8780 ± 0.0032**를 기록했다.
 
-![프로젝트 핵심 성과](../images/01_executive_summary.png)
-
 ## 1. 이해관계자와 페인포인트
 
 ### 프로젝트 배경
 
 반도체 생산 과정에서 웨이퍼 맵의 결함 패턴은 공정 이상을 추적하는 단서다. 그러나 대량의 웨이퍼를 사람이 일관되게 분류하기 어렵고, 정상 샘플이 압도적으로 많아 단순 정확도만으로는 희귀 결함의 누락을 확인하기 어렵다. 이 프로젝트의 목표는 웨이퍼 맵을 9개 패턴으로 자동 분류하면서, 후보 모델을 재현 가능한 기준으로 선택하고 소수 클래스의 위험을 운영 의사결정에 연결하는 것이다.
-
-![이해관계자와 페인포인트](../images/02_stakeholder_pain_point.png)
 
 | 이해관계자 | 페인포인트 | 필요한 분석 결과 | 연결할 의사결정 |
 |---|---|---|---|
@@ -41,7 +37,7 @@
 
 ### 핵심 발견 1 — 클래스 불균형
 
-![클래스 분포](../images/03_class_distribution.png)
+![클래스 분포](images/03_class_distribution.png)
 
 정상 클래스 `none`은 147,431개로 전체 라벨 데이터의 85.24%다. 반면 가장 적은 `Near-full`은 149개(0.086%)뿐이며 정상과 약 989:1 차이가 난다. 모든 샘플을 정상으로 예측해도 Accuracy가 높게 보일 수 있으므로, 모델 선택 지표를 Accuracy가 아닌 Macro-F1로 두었다.
 
@@ -57,11 +53,13 @@
 | Near-full | 149 | 0.09% |
 | none | 147,431 | 85.24% |
 
-![클래스별 대표 웨이퍼 맵](../images/04_wafer_examples.png)
+![클래스별 대표 웨이퍼 맵](images/04_wafer_examples.png)
 
 ### 핵심 발견 2 — 입력 형상이 일정하지 않음
 
-![웨이퍼 맵 크기와 종횡비](../images/05_map_geometry.png)
+| 종횡비 분포 | 빈도가 높은 원본 크기 |
+|---|---|
+| ![웨이퍼 맵 종횡비 분포](images/05_aspect_ratio_distribution.png) | ![빈도가 높은 웨이퍼 맵 크기](images/05_common_map_sizes.png) |
 
 원본 맵에는 346개 크기 조합이 존재한다. 높이는 15~212, 너비는 3~204 범위이며 중앙값은 각각 33이다. 비정사각형 맵이 86.76%이므로 모든 입력을 바로 64×64로 늘리면 원형과 결함의 방향·위치 관계가 왜곡될 수 있다. 이 발견을 근거로 종횡비 보존 패딩을 독립 실험 후보에 포함했다.
 
@@ -83,7 +81,7 @@
 
 ### 비교한 전처리
 
-![전처리 방식 비교](../images/06_preprocessing_comparison.png)
+![전처리 방식 비교](images/06_preprocessing_comparison.png)
 
 | 방식 | 처리 | 입력 채널 | 가설 |
 |---|---|---:|---|
@@ -97,15 +95,15 @@
 
 ### 실험 전략
 
-![순차 실험 전략](../images/07_experiment_strategy.png)
-
 전역 조합을 모두 탐색하는 대신, 모델 → 학습법 → 전처리 → seed 순으로 우승 조건을 다음 단계에 전달했다. 완료 결과를 재사용해 총 11개의 고유 학습으로 비교했다. 이 방식은 계산 비용과 해석 복잡도를 줄이지만, 단계 간 상호작용을 모두 탐색하지는 못한다.
 
 공통 조건은 Adam, learning rate 0.001, weight decay 0.0001, batch size 32, 최대 30 epoch다. validation Macro-F1 기준 early stopping patience 7과 ReduceLROnPlateau를 사용하고, 최고 validation Macro-F1 checkpoint를 복원했다.
 
 ### 1단계 — 모델 구조
 
-![모델 비교](../images/08_model_comparison.png)
+| 모델별 성능 | 성능과 모델 복잡도 |
+|---|---|
+| ![모델별 Macro-F1](images/08_model_macro_f1.png) | ![성능과 모델 복잡도](images/08_model_complexity.png) |
 
 | 모델 | Validation Macro-F1 | 최저 클래스 F1 | 파라미터 |
 |---|---:|---:|---:|
@@ -118,7 +116,7 @@ ResidualCNN이 Macro-F1과 최저 클래스 F1 모두 가장 높아 우승했다
 
 ### 2단계 — 손실 함수와 증강
 
-![학습법 비교](../images/09_recipe_comparison.png)
+![학습법 비교](images/09_recipe_comparison.png)
 
 | 손실 / 증강 | Validation Macro-F1 | 최저 클래스 F1 |
 |---|---:|---:|
@@ -131,7 +129,7 @@ ResidualCNN이 Macro-F1과 최저 클래스 F1 모두 가장 높아 우승했다
 
 ### 3단계 — 전처리
 
-![전처리 성능 비교](../images/10_preprocessing_performance.png)
+![전처리 성능 비교](images/10_preprocessing_performance.png)
 
 | 전처리 | Validation Macro-F1 | 최저 클래스 F1 |
 |---|---:|---:|
@@ -145,7 +143,9 @@ ResidualCNN이 Macro-F1과 최저 클래스 F1 모두 가장 높아 우승했다
 
 `ResidualCNN + Resize/Pad + 기본 CE + 증강 없음`을 고정하고 seed 42·43·44로 재학습했다. 배포 후보는 test를 보기 전에 validation Macro-F1이 가장 높은 seed 42로 선택했다.
 
-![학습 곡선](../images/11_learning_curve.png)
+| Validation Macro-F1 | 학습 및 검증 loss |
+|---|---|
+| ![Validation Macro-F1 학습 곡선](images/11_validation_macro_f1.png) | ![학습 및 검증 loss 곡선](images/11_loss_curve.png) |
 
 ## 5. 평가
 
@@ -155,7 +155,7 @@ ResidualCNN이 Macro-F1과 최저 클래스 F1 모두 가장 높아 우승했다
 
 ### 3-seed 독립 test 결과
 
-![Seed별 validation/test 성능](../images/12_seed_stability.png)
+![Seed별 validation/test 성능](images/12_seed_stability.png)
 
 | Seed | Test Accuracy | Test Macro-F1 | Test 최저 클래스 F1 |
 |---:|---:|---:|---:|
@@ -174,7 +174,9 @@ Accuracy와 Macro-F1 사이에 약 9.89%p 차이가 난다. 다수 클래스의 
 
 ### 클래스별 성능
 
-![클래스별 F1과 표본 수](../images/13_class_performance.png)
+| 클래스별 F1 | 클래스별 test 표본 수 |
+|---|---|
+| ![클래스별 F1](images/13_class_f1.png) | ![클래스별 test 표본 수](images/13_class_support.png) |
 
 | 클래스 | Test F1 평균 | Test Recall 평균 | Test support/seed | 해석 |
 |---|---:|---:|---:|---|
@@ -188,15 +190,13 @@ Accuracy와 Macro-F1 사이에 약 9.89%p 차이가 난다. 다수 클래스의 
 | Near-full | 0.958 | 1.000 | 15 | 지표는 높지만 근거 표본이 매우 적음 |
 | none | 0.991 | 0.995 | 14,743 | 매우 안정적 |
 
-![Test 혼동행렬](../images/14_confusion_matrix.png)
+![Test 혼동행렬](images/14_confusion_matrix.png)
 
 가장 큰 운영 위험은 결함을 정상으로 놓치는 경우다. 3-seed 합산 기준으로 Scratch의 24.6%, Loc의 16.3%, Edge-Loc의 13.9%가 정상으로 예측됐다. Donut은 Loc과의 혼동도 크다. 반면 Near-full의 Recall 1.0은 seed당 test support가 15개뿐이므로 충분한 신뢰의 근거로 보기 어렵다.
 
 ## 6. 비즈니스 인사이트와 결론
 
 ### 운영에 바로 연결할 수 있는 인사이트
-
-![클래스별 운영 액션](../images/15_business_action_matrix.png)
 
 1. **자동화 범위를 클래스별로 다르게 설정해야 한다.** none과 Edge-Ring은 자동 분류 후 표본 감사 방식이 가능하다. Scratch·Loc·Edge-Loc은 저신뢰 예측과 정상 예측 경계 사례를 우선 검토 큐로 보내는 편이 안전하다.
 2. **데이터 수집 우선순위는 낮은 Recall과 작은 support의 교집합이다.** Scratch와 Donut을 먼저 보강하고, Near-full은 높은 점수보다 표본 부족을 해결해야 한다.
@@ -235,8 +235,8 @@ Accuracy와 Macro-F1 사이에 약 9.89%p 차이가 난다. 다수 클래스의 
 - 실험 suite: `modeling/artifacts/suites/4048895abf6e`
 - 최종 설정: `modeling/artifacts/suites/4048895abf6e/final_selection.json`
 - 최종 3-seed 결과: `modeling/artifacts/suites/4048895abf6e/final_summary.json`
-- 시각화 생성 노트북: `modeling/generate_portfolio_images.ipynb`
-- 이미지: `modeling/images/*.png` 15개, 모두 650dpi
+- 시각화 생성 노트북: `modeling/docs/generate_portfolio_images.ipynb`
+- 이미지: `modeling/docs/images/*.png` 15개, 모두 650dpi
 - 상세 실험 정의: `modeling/docs/experiment_design.md`
 
 본 문서의 성능 수치는 저장된 JSON/CSV 산출물에서 계산했다. 시각화 노트북은 기존 이미지 덮어쓰기를 기본적으로 막으며, 마지막 셀에서 파일 수와 DPI를 검증한다.
