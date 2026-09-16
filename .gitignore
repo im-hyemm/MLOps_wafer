@@ -60,3 +60,8 @@ Thumbs.db
 
 # data
 data/
+
+# Modeling artifacts
+modeling/artifacts/*
+!modeling/artifacts/.gitkeep
+**/.ipynb_checkpoints/
