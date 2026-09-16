@@ -1,5 +1,4 @@
 import pytz
-from pathlib import Path
 
 # 기본 설정
 SEED = 42
@@ -12,8 +11,8 @@ BATCH_SIZE = 32
 EPOCHS = 30
 PRESENTATION_EPOCHS = 2
 PRESENTATION_BATCH_SIZE = 10
-MODEL_RESIZE_MODE = "resize_pad_mask"
-MODEL_INPUT_CHANNELS = 2
+MODEL_NAME = "residual_cnn"
+MODEL_PREPROCESSING = "resize_pad"
 RETRAIN_F1_THRESHOLD = 0.7
 
 # 클래스 정의

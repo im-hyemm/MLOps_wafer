@@ -24,8 +24,8 @@ def resize_and_pad(image, target_size=TARGET_SIZE):
     target_h, target_w = target_size
     height, width = image.shape
     scale = min(target_h / height, target_w / width)
-    new_height = max(1, int(height * scale))
-    new_width = max(1, int(width * scale))
+    new_height = max(1, round(height * scale))
+    new_width = max(1, round(width * scale))
     resized_image = cv2.resize(
         image.astype(np.uint8),
         (new_width, new_height),
@@ -41,45 +41,6 @@ def resize_and_pad(image, target_size=TARGET_SIZE):
     return padded_image
 
 
-def resize_pad_with_mask(image, target_size=TARGET_SIZE):
-    """이미지 비율을 유지해 리사이즈하고 유효 영역 mask를 만듭니다.
-
-    Args:
-        image: 2차원 웨이퍼 맵 배열입니다.
-        target_size: 목표 높이와 너비입니다.
-
-    Returns:
-        패딩된 이미지와 유효 영역 mask의 튜플입니다.
-
-    Raises:
-        ValueError: 이미지가 비어 있거나 2차원이 아닌 경우 발생합니다.
-    """
-    image = np.asarray(image)
-    if image.ndim != 2 or 0 in image.shape:
-        raise ValueError("웨이퍼 맵은 비어 있지 않은 2차원 배열이어야 합니다.")
-
-    target_h, target_w = target_size
-    h, w = image.shape
-    scale = min(target_h / h, target_w / w)
-    new_h = max(1, int(round(h * scale)))
-    new_w = max(1, int(round(w * scale)))
-
-    resized_image = cv2.resize(
-        image.astype(np.uint8),
-        (new_w, new_h),
-        interpolation=cv2.INTER_NEAREST,
-    )
-
-    padded_image = np.zeros(target_size, dtype=np.uint8)
-    mask = np.zeros(target_size, dtype=np.uint8)
-    top = (target_h - new_h) // 2
-    left = (target_w - new_w) // 2
-    padded_image[top:top + new_h, left:left + new_w] = resized_image
-    mask[top:top + new_h, left:left + new_w] = 1
-
-    return padded_image, mask
-
-
 def preprocess_wafer_map(
     image,
     resize_mode="resize_pad",
@@ -89,7 +50,7 @@ def preprocess_wafer_map(
 
     Args:
         image: 2차원 웨이퍼 맵 배열입니다.
-        resize_mode: ``resize_pad`` 또는 ``resize_pad_mask``입니다.
+        resize_mode: ``resize_pad`` 전처리 방식입니다.
         target_size: 목표 높이와 너비입니다.
 
     Returns:
@@ -98,17 +59,16 @@ def preprocess_wafer_map(
     Raises:
         ValueError: 지원하지 않는 전처리 모드인 경우 발생합니다.
     """
-    if resize_mode == "resize_pad":
-        padded = resize_and_pad(image, target_size)
-        wafer_channel = padded.astype(np.float32)[None, ...] / 2.0
-        return wafer_channel
-    if resize_mode == "resize_pad_mask":
-        padded, mask = resize_pad_with_mask(image, target_size)
-        wafer_channel = padded.astype(np.float32)[None, ...] / 2.0
-        mask_channel = mask.astype(np.float32)[None, ...]
-        return np.concatenate((wafer_channel, mask_channel), axis=0)
+    if resize_mode != "resize_pad":
+        raise ValueError(f"지원하지 않는 전처리 모드입니다: {resize_mode}")
 
-    raise ValueError(f"지원하지 않는 전처리 모드입니다: {resize_mode}")
+    source = np.asarray(image)
+    if not np.isin(source, (0, 1, 2)).all() or not np.any(source > 0):
+        raise ValueError(
+            "웨이퍼 맵은 0/1/2로 구성되고 유효 셀이 있어야 합니다."
+        )
+    padded = resize_and_pad(source, target_size)
+    return padded.astype(np.float32)[None, ...] / 2.0
 
 
 def convert_into_colored_img(image_bytes_io):

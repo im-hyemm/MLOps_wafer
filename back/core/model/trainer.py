@@ -9,10 +9,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.transforms as transforms
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
-from sklearn.utils import resample
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -25,8 +23,8 @@ from config.settings import (
     EPOCHS,
     LABEL2ID,
     LEARNING_RATE,
-    MODEL_INPUT_CHANNELS,
-    MODEL_RESIZE_MODE,
+    MODEL_NAME,
+    MODEL_PREPROCESSING,
     NUM_CLASSES,
     PRESENTATION_BATCH_SIZE,
     PRESENTATION_EPOCHS,
@@ -39,7 +37,7 @@ from config.settings import (
 from core.data.dataset import WaferDataset
 from core.evaluation.metrics import calculate_metrics
 from core.evaluation.visualization import draw_cm_heatmap
-from core.model.architecture import SmallCNN
+from core.model.architecture import ResidualCNN
 from utils.common import seed_worker, set_seed
 
 
@@ -109,45 +107,15 @@ def split_dataset(dataset, seed=SEED):
     )
 
 
-def _oversample_training_frame(dataframe):
-    """각 클래스 크기를 원본 클래스 평균 크기로 맞춥니다."""
-    average_size = int(dataframe["label_id"].value_counts().mean())
-    sampled_frames = []
-    for label in sorted(dataframe["label_id"].unique()):
-        class_frame = dataframe[dataframe["label_id"] == label]
-        sampled_frames.append(
-            resample(
-                class_frame,
-                replace=True,
-                n_samples=average_size,
-                random_state=SEED,
-            )
-        )
-    return (
-        pd.concat(sampled_frames)
-        .sample(frac=1.0, random_state=SEED)
-        .reset_index(drop=True)
-    )
-
-
 def _build_data_loaders(data_splits, batch_size):
-    """exp5 전처리와 증강을 사용하는 DataLoader를 만듭니다."""
-    training_frame = _oversample_training_frame(data_splits.train)
-    training_transforms = transforms.Compose(
-        [
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.5),
-            transforms.RandomRotation(15),
-        ]
-    )
+    """최종 모델링 설정으로 학습·평가 DataLoader를 만듭니다."""
 
-    def build_dataset(dataframe, augmentation=None):
+    def build_dataset(dataframe):
         return WaferDataset(
             dataframe["waferMap"].values,
             dataframe["label_id"].values,
             dataframe["lotName"].values,
-            transforms=augmentation,
-            resize_mode=MODEL_RESIZE_MODE,
+            resize_mode=MODEL_PREPROCESSING,
             target_size=TARGET_SIZE,
         )
 
@@ -159,7 +127,7 @@ def _build_data_loaders(data_splits, batch_size):
         "worker_init_fn": seed_worker,
     }
     train_loader = DataLoader(
-        build_dataset(training_frame, training_transforms),
+        build_dataset(data_splits.train),
         shuffle=True,
         generator=generator,
         **common_options,
@@ -248,15 +216,13 @@ def _run_epoch(
 def _checkpoint_config(batch_size, epochs):
     """재학습 체크포인트에 기록할 모델 설정을 반환합니다."""
     return {
-        "checkpoint_version": 1,
-        "name": "exp5_resize_pad_mask_os_aug_retrained",
-        "resize_mode": MODEL_RESIZE_MODE,
-        "use_oversampling": True,
-        "use_augmentation": True,
-        "in_channels": MODEL_INPUT_CHANNELS,
-        "classes": list(CLASSES),
+        "model": MODEL_NAME,
+        "preprocessing": MODEL_PREPROCESSING,
+        "loss": "ce",
+        "augmentation": False,
+        "seed": SEED,
         "batch_size": batch_size,
-        "target_size": list(TARGET_SIZE),
+        "target_size": TARGET_SIZE[0],
         "epochs": epochs,
         "learning_rate": LEARNING_RATE,
         "weight_decay": WEIGHT_DECAY,
@@ -266,7 +232,7 @@ def _checkpoint_config(batch_size, epochs):
 
 
 def process(dataset, is_presentation, data_splits=None):
-    """exp5 구조의 후보 모델을 새 초기값부터 학습합니다.
+    """ResidualCNN 후보 모델을 새 초기값부터 학습합니다.
 
     Args:
         dataset: 전체 업로드 DataFrame입니다.
@@ -289,10 +255,7 @@ def process(dataset, is_presentation, data_splits=None):
         batch_size,
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SmallCNN(
-        num_classes=NUM_CLASSES,
-        in_channels=MODEL_INPUT_CHANNELS,
-    ).to(device)
+    model = ResidualCNN(in_channels=1).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(
         model.parameters(),
@@ -352,7 +315,9 @@ def process(dataset, is_presentation, data_splits=None):
                 {
                     "model_state_dict": best_model_state,
                     "config": checkpoint_config,
-                    "best_val_f1": best_validation_f1,
+                    "classes": list(CLASSES),
+                    "best_epoch": epoch,
+                    "best_validation_macro_f1": best_validation_f1,
                 },
                 model_location,
             )

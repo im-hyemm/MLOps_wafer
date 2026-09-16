@@ -14,7 +14,6 @@ class WaferDataset(Dataset):
         images,
         labels,
         lot_names,
-        transforms=None,
         resize_mode="resize_pad",
         target_size=TARGET_SIZE,
     ):
@@ -24,14 +23,12 @@ class WaferDataset(Dataset):
             images: 웨이퍼 맵 배열 모음입니다.
             labels: 클래스 ID 모음입니다.
             lot_names: Lot 이름 모음입니다.
-            transforms: 채널 전체에 적용할 PyTorch 변환입니다.
             resize_mode: 모델 입력 전처리 방식입니다.
             target_size: 입력 이미지의 목표 높이와 너비입니다.
         """
         self.images = images
         self.labels = labels
         self.lot_names = lot_names
-        self.transforms = transforms
         self.resize_mode = resize_mode
         self.target_size = target_size
 
@@ -48,9 +45,6 @@ class WaferDataset(Dataset):
             target_size=self.target_size,
         )
         tensor = torch.from_numpy(np.ascontiguousarray(array))
-
-        if self.transforms is not None:
-            tensor = self.transforms(tensor)
 
         return tensor, int(self.labels[idx]), self.lot_names[idx]
 
